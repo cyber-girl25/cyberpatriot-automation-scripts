@@ -20,7 +20,7 @@ function Prompt-Policy {
     return $result
 }
 
-###########################################################################################################
+#########################################################################################
 
 $currentPolicy = "A sufficient password history is being kept"
 $checkEnforcePasswordHistory = Prompt-Policy -policyName $currentPolicy
