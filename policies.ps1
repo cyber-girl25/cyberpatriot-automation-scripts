@@ -125,6 +125,8 @@ if ($checkAccessThisComputerFromTheNetwork -eq 0) {
         Write-SeceditPolicy -area "USER_RIGHTS" -policyHeader "Privilege Rights" -policyLine $newPolicy
 
         Write-Host "`n`n`t`t[!] Removed Everyone from policy."
+    } else {
+        Write-Host "`n`t`tThe group Everyone cannot access this computer from the network."
     }
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
