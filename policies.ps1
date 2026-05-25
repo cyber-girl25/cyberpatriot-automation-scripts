@@ -131,3 +131,30 @@ if ($checkAccessThisComputerFromTheNetwork -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Let Everyone permissions apply to anonymous users [disabled]"
+$checkLetEveryonePermsApplyToAnonUsers = Prompt-Policy -policyName $currentPolicy
+
+if ($checkLetEveryonePermsApplyToAnonUsers -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get registry value
+    $everyoneIncludesAnon = (Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa").EveryoneIncludesAnonymous
+
+    # If it is disabled, inform the user. Else, inform, change the value, inform again.
+    if ($everyoneIncludesAnon -eq 0) {
+        Write-Host "`n`t`tLet Everyone permissions apply to anonymous users is Disabled"
+    } else {
+        Write-Host "`n`t`tLet Everyone permissions apply to anonymous users is Enabled. Disabling..."
+
+        # Change value of key to 0
+        Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "EveryoneIncludesAnonymous" -Value 0
+
+        # Force systemwide updates
+        gpupdate /force | Out-Null
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy"
+}
