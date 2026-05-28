@@ -10,6 +10,7 @@ A bunch of scripts to automate routine tasks like policy checks/changes for (mai
  - A secure maximum password age exists
  - A secure lockout threshold exists
  - Passwords must meet complexity requirements
+ - Behavior of the elevation prompt for administrators in Admin Approval Mode configured to prompt
 
 ## Things I have skipped and need to come back
 If you're a member of this project, feel free to work on this!
