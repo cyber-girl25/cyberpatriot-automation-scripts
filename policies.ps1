@@ -30,7 +30,7 @@ function Get-SeceditPolicy {
     secedit /export /cfg $tempFile /areas $area | Out-Null
 
     # Find the policy line
-    $policyLine = Get-Content $tempFile | Select-String $policyName
+    $policyLine = Get-Content $tempFile | Select-String -Pattern $policyName -SimpleMatch
 
     # Get rid of the temp file
     Remove-Item $tempFile
@@ -274,6 +274,36 @@ if ($checkPWMeetComplexityReqs -eq 0) {
         Write-SeceditPolicy -area "SECURITYPOLICY" -policyHeader "System Access" -policyLine $newPolicy
 
         Write-Host "`n`n`t`t[!] Enabled policy."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
+
+#########################################################################################
+
+$currentPolicy = "Behavior of the elevation prompt for administrators in Admin Approval Mode configured to prompt"
+$checkElevationPromptPolicy = Prompt-Policy -policyName $currentPolicy
+if ($checkElevationPromptPolicy -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get policy line
+    $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ConsentPromptBehaviorAdmin"
+    
+    # Get value
+    $value = ($policyLine -split "=")[1]
+
+    if ($value -eq "4,2") {
+        Write-Host "`n`t`tThe policy prompts for consent on the secure desktop."
+    } else {
+        Write-Host "`n`t`tThe policy does not prompt for consent on the secure desktop. Correcting this..."
+
+        # Determine new policy line
+        $newPolicy = "MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ConsentPromptBehaviorAdmin=4,2"
+        
+        # Write the policy
+        Write-SeceditPolicy -area "SECURITYPOLICY" -policyHeader "Registry Values" -policyLine $newPolicy
+
+        Write-Host "`n`n`t`t[!] Corrected policy to prompting for consent on the secure desktop."
     }
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
