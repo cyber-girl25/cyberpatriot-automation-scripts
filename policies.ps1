@@ -188,3 +188,33 @@ if ($checkSecureMinPWrequired -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "A secure maximum password age exists"
+$checkSecureMaxPWAgeExists = Prompt-Policy -policyName $currentPolicy
+if ($checkSecureMaxPWAgeExists -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get policy line
+    $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "MaximumPasswordAge"
+    
+    # Get password value
+    $value = [int]($policyLine -split "=")[1].Trim()
+
+    if ($value -le 90) {
+        Write-Host "`n`t`tThe maximum password age is $value"
+    } else {
+        Write-Host "`n`t`tThe maximum password age is $value. Changing this to 90..."
+
+        # Determine new policy line
+        $newPolicy = "MaximumPasswordAge = 90"
+        
+        # Write the policy
+        Write-SeceditPolicy -area "SECURITYPOLICY" -policyHeader "System Access" -policyLine $newPolicy
+
+        Write-Host "`n`n`t`t[!] Changed maximum password age to 90."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}

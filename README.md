@@ -7,3 +7,4 @@ A bunch of scripts to automate routine tasks like policy checks/changes for (mai
  - Everyone may not access this computer from the network
  - Let Everyone permissions apply to anonymous users [disabled]
  - A secure minimum password length is required
+ - A secure maximum password age exists
