@@ -9,6 +9,7 @@ A bunch of scripts to automate routine tasks like policy checks/changes for (mai
  - A secure minimum password length is required
  - A secure maximum password age exists
  - A secure lockout threshold exists
+ - Passwords must meet complexity requirements
 
 ## Things I have skipped and need to come back
 If you're a member of this project, feel free to work on this!

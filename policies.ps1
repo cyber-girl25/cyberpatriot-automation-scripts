@@ -248,3 +248,33 @@ if ($checkSecureMaxPWAgeExists -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Passwords must meet complexity requirements"
+$checkPWMeetComplexityReqs = Prompt-Policy -policyName $currentPolicy
+if ($checkPWMeetComplexityReqs -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get policy line
+    $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "PasswordComplexity"
+    
+    # Get password value
+    $value = [int]($policyLine -split "=")[1].Trim()
+
+    if ($value -eq 1) {
+        Write-Host "`n`t`tThe policy is enabled."
+    } else {
+        Write-Host "`n`t`tThe policy is disabled. Enabling..."
+
+        # Determine new policy line
+        $newPolicy = "PasswordComplexity = 1"
+        
+        # Write the policy
+        Write-SeceditPolicy -area "SECURITYPOLICY" -policyHeader "System Access" -policyLine $newPolicy
+
+        Write-Host "`n`n`t`t[!] Enabled policy."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
