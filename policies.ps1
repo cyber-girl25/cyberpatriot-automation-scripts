@@ -169,7 +169,7 @@ if ($checkSecureMinPWrequired -eq 0) {
     # Get policy line
     $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "MinimumPasswordLength"
     
-    # Get password value
+    # Get value
     $value = [int]($policyLine -split "=")[1].Trim()
 
     if ($value -ge 10) {
@@ -199,7 +199,7 @@ if ($checkSecureMaxPWAgeExists -eq 0) {
     # Get policy line
     $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "MaximumPasswordAge"
     
-    # Get password value
+    # Get value
     $value = [int]($policyLine -split "=")[1].Trim()
 
     if ($value -le 90) {
@@ -229,7 +229,7 @@ if ($checkSecureMaxPWAgeExists -eq 0) {
     # Get policy line
     $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "LockoutBadCount"
     
-    # Get password value
+    # Get value
     $value = [int]($policyLine -split "=")[1].Trim()
 
     if ($value -eq 10) {
@@ -259,7 +259,7 @@ if ($checkPWMeetComplexityReqs -eq 0) {
     # Get policy line
     $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "PasswordComplexity"
     
-    # Get password value
+    # Get value
     $value = [int]($policyLine -split "=")[1].Trim()
 
     if ($value -eq 1) {

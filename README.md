@@ -16,3 +16,5 @@ If you're a member of this project, feel free to work on this!
 ### Policies
  - Windows Defender does not exclude .exe file extensions
     - Why I skipped this: I figured out how to get rid of these file extensions locally, but turns out gpedit changes are different from local changes. I want to learn registry keys properly before I write the code for changing them. Also, the Windows Defender part of this policy change seems a bit tacky to automate, and I'm going to research this soon to see if it can even be automated at all (I'm sure it can)
+ - Credential Validation [Success]
+    - Same issue as above
