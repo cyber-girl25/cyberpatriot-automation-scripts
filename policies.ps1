@@ -218,3 +218,33 @@ if ($checkSecureMaxPWAgeExists -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "A secure lockout threshold exists"
+$checkSecureMaxPWAgeExists = Prompt-Policy -policyName $currentPolicy
+if ($checkSecureMaxPWAgeExists -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get policy line
+    $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "LockoutBadCount"
+    
+    # Get password value
+    $value = [int]($policyLine -split "=")[1].Trim()
+
+    if ($value -eq 10) {
+        Write-Host "`n`t`tThe lockout threshold is $value"
+    } else {
+        Write-Host "`n`t`tThe lockout threshold is $value. Changing this to 10..."
+
+        # Determine new policy line
+        $newPolicy = "LockoutBadCount = 10"
+        
+        # Write the policy
+        Write-SeceditPolicy -area "SECURITYPOLICY" -policyHeader "System Access" -policyLine $newPolicy
+
+        Write-Host "`n`n`t`t[!] Changed lockout threshold age to 10."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}

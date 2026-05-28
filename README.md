@@ -8,3 +8,4 @@ A bunch of scripts to automate routine tasks like policy checks/changes for (mai
  - Let Everyone permissions apply to anonymous users [disabled]
  - A secure minimum password length is required
  - A secure maximum password age exists
+ - A secure lockout threshold exists
