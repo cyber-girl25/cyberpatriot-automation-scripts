@@ -338,3 +338,33 @@ if ($checkElevationPromptPolicy -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Do not allow anonymous enumeration of SAM accounts [enabled]"
+$checkElevationPromptPolicy = Prompt-Policy -policyName $currentPolicy
+if ($checkElevationPromptPolicy -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get policy line
+    $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "MACHINE\System\CurrentControlSet\Control\Lsa\RestrictAnonymousSAM"
+    
+    # Get value
+    $value = ($policyLine -split "=")[1]
+
+    if ($value -eq "4,1") {
+        Write-Host "`n`t`tThe policy does not allow anonymous enumeration of SAM accounts."
+    } else {
+        Write-Host "`n`t`tThe policy allows anonymous enumeration of SAM accounts. Correcting this..."
+
+        # Determine new policy line
+        $newPolicy = "MACHINE\System\CurrentControlSet\Control\Lsa\RestrictAnonymousSAM=4,1"
+        
+        # Write the policy
+        Write-SeceditPolicy -area "SECURITYPOLICY" -policyHeader "Registry Values" -policyLine $newPolicy
+
+        Write-Host "`n`n`t`t[!] Corrected policy to not allowing anonymous enumeration of SAM accounts."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
