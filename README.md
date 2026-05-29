@@ -14,6 +14,7 @@ A bunch of scripts to automate routine tasks like policy checks/changes for (mai
  - Limit local use of blank passwords to console only [enabled]
  - Do not allow anonymous enumeration of SAM accounts [enabled]
  - Users may not change the system time
+ - Event log service is running
 
 ## Things I have skipped and need to come back
 If you're a member of this project, feel free to work on this!

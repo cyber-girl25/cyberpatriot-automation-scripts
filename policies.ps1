@@ -369,7 +369,6 @@ if ($checkElevationPromptPolicy -eq 0) {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
 
-# SeSystemtimePrivilege = *S-1-5-19,*S-1-5-32-544,*S-1-5-32-545
 #########################################################################################
 
 $currentPolicy = "Users may not change the system time"
@@ -396,7 +395,38 @@ if ($checkAccessThisComputerFromTheNetwork -eq 0) {
 
         Write-Host "`n`n`t`t[!] Removed Users from policy."
     } else {
-        Write-Host "`n`t`ttThe group Users cannot change the system time."
+        Write-Host "`n`t`tThe group Users cannot change the system time."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
+
+#########################################################################################
+
+$currentPolicy = "Event log service is running"
+$checkAccessThisComputerFromTheNetwork = Prompt-Policy -policyName $currentPolicy
+
+if ($checkAccessThisComputerFromTheNetwork -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get service status and startup type
+    $serviceStatus = (Get-Service -name "EventLog").Status
+    $serviceStartupType = (Get-Service -name "EventLog").StartType
+
+    # Do logic.
+    if (($serviceStatus -eq "Running") -and ($serviceStartupType -eq "Automatic")) {
+        Write-Host "`n`t`tEvent log service is running."
+    } else {
+        Write-Host "`n`t`tEvent log service is not running. Correcting..."
+
+        # Fix the service
+        Set-Service -Name "EventLog" -StartupType "Automatic"
+        Start-Service -Name "EventLog"
+
+        # Force update
+        gpupdate /force | Out-Null
+        
+        Write-Host "`n`n`t`t[!] Event log service is running."
     }
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
