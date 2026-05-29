@@ -368,3 +368,36 @@ if ($checkElevationPromptPolicy -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+# SeSystemtimePrivilege = *S-1-5-19,*S-1-5-32-544,*S-1-5-32-545
+#########################################################################################
+
+$currentPolicy = "Users may not change the system time"
+$checkAccessThisComputerFromTheNetwork = Prompt-Policy -policyName $currentPolicy
+
+if ($checkAccessThisComputerFromTheNetwork -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get the policy line
+    $policyLine = Get-SeceditPolicy -area "USER_RIGHTS" -policyName "SeSystemtimePrivilege"
+
+    # Get the values
+    $values = (($policyLine -split "=")[1].Trim() -split ",")
+    # If everyone is in the values, remove it.
+    if ("*S-1-5-32-545" -in $values) {
+        Write-Host "`n`t`tThe group Users can change the system time. Removing..."
+
+        # Determine the new value
+        $newValues = ($values -ne "*S-1-5-32-545") -join ","
+        $newPolicy = "SeSystemtimePrivilege = $newValues"
+        
+        # Write the policy
+        Write-SeceditPolicy -area "USER_RIGHTS" -policyHeader "Privilege Rights" -policyLine $newPolicy
+
+        Write-Host "`n`n`t`t[!] Removed Users from policy."
+    } else {
+        Write-Host "`n`t`ttThe group Users cannot change the system time."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
