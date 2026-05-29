@@ -56,7 +56,6 @@ $currentUsers = @((Get-LocalUser).Name)
 
 # Default users
 $defaults = @("Administrator", "Guest", "DefaultAccount", "WDAGUtilityAccount")
-
 #########################################################################################
 
 $currentPolicy = "Remove unauthorized users"
@@ -68,7 +67,7 @@ if ($checkUnauthorizedUsers -eq 0) {
 
     # Loop through each current user. If it isn't a default user, check if it's in authorized users. If it isn't, ask the user if it should be removed. If yes, remove it.
     foreach ($currentUser in $currentUsers) {
-        if ($defaults -notcontains $currentUsers) {
+        if ($defaults -notcontains $currentUser) {
             if ($authorizedUsers -notcontains $currentUser) {
                 $deleteUser = Prompt-User -userName $currentUser -action "User '$currentUser' is not in the provided list of authorized users. Would you like to delete them?"
                 if ($deleteUser -eq 0) {
