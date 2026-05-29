@@ -308,3 +308,33 @@ if ($checkElevationPromptPolicy -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Limit local use of blank passwords to console only [enabled]"
+$checkElevationPromptPolicy = Prompt-Policy -policyName $currentPolicy
+if ($checkElevationPromptPolicy -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get policy line
+    $policyLine = Get-SeceditPolicy -area "SECURITYPOLICY" -policyName "MACHINE\System\CurrentControlSet\Control\Lsa\LimitBlankPasswordUse"
+    
+    # Get value
+    $value = ($policyLine -split "=")[1]
+
+    if ($value -eq "4,1") {
+        Write-Host "`n`t`tThe policy limits local use of blank passwords to console only."
+    } else {
+        Write-Host "`n`t`tThe policy does not limit local use of blank passwords to console only. Correcting this..."
+
+        # Determine new policy line
+        $newPolicy = "MACHINE\System\CurrentControlSet\Control\Lsa\LimitBlankPasswordUse=4,1"
+        
+        # Write the policy
+        Write-SeceditPolicy -area "SECURITYPOLICY" -policyHeader "Registry Values" -policyLine $newPolicy
+
+        Write-Host "`n`n`t`t[!] Corrected policy to limiting local use of blank passwords to console only."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
