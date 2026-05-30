@@ -111,8 +111,8 @@ Password
     # If none is provided, set password to secure default
     if ($password -eq "") {
         $passwordText = "CyberPatriot123!"
-        $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
     }
+    $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
 
     # Make accounts with passwords
     foreach ($user in $usersToAdd) {
@@ -189,6 +189,50 @@ New admins
     Add-LocalGroupMember -Group "Administrators" -Member $adminsToAdd
 
     Write-Host "`n`t[!] Added new admins to Administrators"
+
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
+
+#########################################################################################
+
+# NOTE: THIS PART OF THE SCRIPT DOES NOT ACTUALLY CHECK IF PASSWORDS MEET COMPLEXITY REQUIREMENTS.
+# IT IS THE USER'S RESPONSIBILITY TO SEE ALL GIVEN PASSWORDS AND CORRECT THE INSECURE ONES.
+# ADMIN PASSWORDS ARE GIVEN SO THIS SHOULD NOT BE HARD
+
+$currentPolicy = "Change insecure passwords"
+$checkInsecurePW = Prompt-Policy -policyName $currentPolicy
+
+if ($checkInsecurePW -eq 0) {
+    # Get list of users to change
+    $prompt = @"
+
+Enter the list of users to change passwords for. Separate with commas.
+Example: meta,delta
+Users to change passwords for
+"@
+    $users = @((Read-Host $prompt) -split ",")
+
+    # Get the secure password
+    $prompt = @"
+
+Enter the secure password. If none is provided, the default 'CyberPatriot123!' will be used.
+Password
+"@
+    $password = Read-Host $prompt -AsSecureString
+
+    # If none is provided, set password to secure default
+    if ($password -eq "") {
+        $passwordText = "CyberPatriot123!"
+    }
+    $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
+
+    # Set password
+    foreach ($user in $users) {
+        Set-LocalUser -Name $user -Password $password
+    }
+
+    Write-Host "`n`t[!] Changed insecure password for all given users"
 
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"

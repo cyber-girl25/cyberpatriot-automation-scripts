@@ -20,6 +20,8 @@ A bunch of scripts to automate routine tasks like policy checks/changes for (mai
  - Add new users
  - Remove any users that should not be administrators from administrators
  - Add new administrators
+ - Change insecure passwords
+   - THIS PART OF THE SCRIPT DOES NOT ACTUALLY CHECK IF PASSWORDS MEET COMPLEXITY REQUIREMENTS. IT IS THE USER'S RESPONSIBILITY TO SEE ALL GIVEN PASSWORDS AND CORRECT THE INSECURE ONES. ADMIN PASSWORDS ARE GIVEN SO THIS SHOULD NOT BE HARD
 
 ## Things I have skipped and need to come back
 If you're a member of this project, feel free to work on this!
