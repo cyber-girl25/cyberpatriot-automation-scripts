@@ -17,6 +17,7 @@ A bunch of scripts to automate routine tasks like policy checks/changes for (mai
  - Event log service is running
 ### Users
  - Remove unauthorized users
+ - Add new users
 
 ## Things I have skipped and need to come back
 If you're a member of this project, feel free to work on this!
