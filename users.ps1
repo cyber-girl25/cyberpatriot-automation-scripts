@@ -106,10 +106,10 @@ New users
 Enter the secure password. If none is provided, the default 'CyberPatriot123!' will be used.
 Password
 "@
-    $password = Read-Host $prompt -AsSecureString
+    $passwordText = Read-Host $prompt
 
     # If none is provided, set password to secure default
-    if ($password -eq "") {
+    if ($null -eq $passwordText -or $passwordText -eq "") {
         $passwordText = "CyberPatriot123!"
     }
     $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
@@ -121,6 +121,9 @@ Password
 
             # Force password reset on next login
             net user $user /logonpasswordch:yes | Out-Null
+
+            # Show as password protected
+            net user $user /passwordreq:yes | Out-Null
 
             Write-Host "`n`t`t[!] Added user '$user'"
         }
@@ -219,10 +222,10 @@ Users to change passwords for
 Enter the secure password. If none is provided, the default 'CyberPatriot123!' will be used.
 Password
 "@
-    $password = Read-Host $prompt -AsSecureString
+    $passwordText = Read-Host $prompt
 
     # If none is provided, set password to secure default
-    if ($password -eq "") {
+    if ($null -eq $passwordText -or $passwordText -eq "") {
         $passwordText = "CyberPatriot123!"
     }
     $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
