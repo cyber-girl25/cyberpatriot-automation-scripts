@@ -64,7 +64,6 @@ Users
     $defaults = @("Administrator", "Guest", "DefaultAccount", "WDAGUtilityAccount")
 
     # Inform the user
-    Write-Host "`n`t[!] Checking '$currentPolicy'"
 
     # Loop through each current user. If it isn't a default user, check if it's in authorized users. If it isn't, ask the user if it should be removed. If yes, remove it.
     foreach ($currentUser in $currentUsers) {
@@ -92,7 +91,6 @@ $currentPolicy = "Add new users"
 $doAddUsers = Prompt-Policy -policyName $currentPolicy
 
 if ($doAddUsers -eq 0) {
-    Write-Host "`n`t[!] Checking '$currentPolicy'"
     # Get list of users to add
     $prompt = @"
 
@@ -136,8 +134,6 @@ $currentPolicy = "Remove any users that should not be administrators from admini
 $checkAdmins = Prompt-Policy -policyName $currentPolicy
 
 if ($checkAdmins -eq 0) {
-    Write-Host "`n`t[!] Checking '$currentPolicy'"
-
     # Get admin list
     $prompt = @"
 Enter the authorized administrators list. Separate with commas.
@@ -171,6 +167,29 @@ Users
         }
     }
     Write-Host "`n`t`t[!] Removed all unauthorized admins"
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
+
+#########################################################################################
+
+$currentPolicy = "Add administrators"
+$doAddAdmins = Prompt-Policy -policyName $currentPolicy
+if ($doAddAdmins -eq 0) {
+    # Get list of admins to add
+    $prompt = @"
+
+Enter the list of admins to make accounts for. Separate with commas.
+Example: franki,bernadette
+New admins
+"@
+    $adminsToAdd = @((Read-Host $prompt) -split ",")
+
+    # Add admins
+    Add-LocalGroupMember -Group "Administrators" -Member $adminsToAdd
+
+    Write-Host "`n`t[!] Added new admins to Administrators"
+
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
