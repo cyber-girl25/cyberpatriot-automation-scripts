@@ -32,6 +32,6 @@ If you're a member of this project, feel free to work on this!
     - Same issue as above
  - Unauthorized users may not create global objects
     - I'll come back to this, I don't want to deal with those account and group IDs and stuff right now
-## Bugs
+### Bugs
 - Unauthorized users/admins does not exclude default System Administrator
 - When max pwd age is -1, it is not changed
