@@ -1155,59 +1155,111 @@ $currentPolicy = "RDP Security Layer set to SSL"
 $checkRdpSecurityLayer = Prompt-Policy -policyName $currentPolicy
 
 if ($checkRdpSecurityLayer -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Registry locations: the Group Policy setting, and the live RDP listener setting
+    $rdpPolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+    $rdpPolicyKey = "Software\Policies\Microsoft\Windows NT\Terminal Services"
+    $rdpListenerPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"
+
+    # Get the Security Layer values. 0 = RDP, 1 = Negotiate, 2 = SSL.
+    $securityLayer = $null
+    if (Test-Path $rdpPolicyPath) {
+        $securityLayer = (Get-ItemProperty -Path $rdpPolicyPath).SecurityLayer
+    }
+    $listenerSecurityLayer = $null
+    if (Test-Path $rdpListenerPath) {
+        $listenerSecurityLayer = (Get-ItemProperty -Path $rdpListenerPath).SecurityLayer
+    }
+
+    # Get the value in the local Group Policy file. This is what gpedit.msc shows.
+    $policySecurityLayer = Get-LocalGpoDword -key $rdpPolicyKey -valueName "SecurityLayer"
+
+    if (($securityLayer -eq 2) -and ($listenerSecurityLayer -eq 2) -and ($policySecurityLayer -eq 2)) {
+        Write-Host "`n`t`tThe RDP Security Layer is set to SSL."
+    } else {
+        Write-Host "`n`t`tThe RDP Security Layer is not set to SSL. Setting it to SSL..."
+
+        # Make sure the policy key exists
+        if (-not (Test-Path $rdpPolicyPath)) {
+            New-Item -Path $rdpPolicyPath -Force | Out-Null
+        }
+
+        # Set the Security Layer to SSL in the registry so it takes effect now
+        Set-ItemProperty -Path $rdpPolicyPath -Name "SecurityLayer" -Value 2 -Type DWord
+        if (Test-Path $rdpListenerPath) {
+            Set-ItemProperty -Path $rdpListenerPath -Name "SecurityLayer" -Value 2 -Type DWord
+        }
+
+        # Enable it in the local Group Policy so gpedit.msc shows it as Enabled
+        Set-LocalGpoDword -key $rdpPolicyKey -valueName "SecurityLayer" -data 2
+
+        # Force systemwide updates
+        gpupdate /force | Out-Null
+
+        # Verify
+        $newSecurityLayer = (Get-ItemProperty -Path $rdpPolicyPath).SecurityLayer
+        $newPolicySecurityLayer = Get-LocalGpoDword -key $rdpPolicyKey -valueName "SecurityLayer"
+        if (($newSecurityLayer -eq 2) -and ($newPolicySecurityLayer -eq 2)) {
+            Write-Host "`n`n`t`t[!] Set the RDP Security Layer to SSL. Reopen the Local Group Policy Editor to see it."
+        } else {
+            Write-Host "`n`n`t`t[!] Could not set the RDP Security Layer. Check the Local Group Policy Editor manually."
+        }
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
+
+#########################################################################################
+
+$currentPolicy = "RDP network level authentication enabled"
+$checkRdpNla = Prompt-Policy -policyName $currentPolicy
+
+if ($checkRdpNla -eq 0) {
     # Only run this policy if RDP is a critical service
     $rdpIsCritical = Prompt-Question -title "Remote Desktop (RDP)" -message "Is RDP a critical service on this computer?"
 
     if ($rdpIsCritical -eq 0) {
         Write-Host "`n`t[!] Checking '$currentPolicy'"
 
-        # Registry locations: the Group Policy setting, and the live RDP listener setting
-        $rdpPolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
-        $rdpPolicyKey = "Software\Policies\Microsoft\Windows NT\Terminal Services"
+        # Registry locations: the live RDP listener setting (the Settings app checkbox), and the Group Policy setting that can override it
         $rdpListenerPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"
+        $rdpPolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
 
-        # Get the Security Layer values. 0 = RDP, 1 = Negotiate, 2 = SSL.
-        $securityLayer = $null
-        if (Test-Path $rdpPolicyPath) {
-            $securityLayer = (Get-ItemProperty -Path $rdpPolicyPath).SecurityLayer
-        }
-        $listenerSecurityLayer = $null
+        # Get the live value. 1 = Network Level Authentication required, 0 = not required.
+        $userAuthentication = $null
         if (Test-Path $rdpListenerPath) {
-            $listenerSecurityLayer = (Get-ItemProperty -Path $rdpListenerPath).SecurityLayer
+            $userAuthentication = (Get-ItemProperty -Path $rdpListenerPath).UserAuthentication
         }
 
-        # Get the value in the local Group Policy file. This is what gpedit.msc shows.
-        $policySecurityLayer = Get-LocalGpoDword -key $rdpPolicyKey -valueName "SecurityLayer"
+        # Get the Group Policy value, if one is configured
+        $policyUserAuthentication = $null
+        if (Test-Path $rdpPolicyPath) {
+            $policyUserAuthentication = (Get-ItemProperty -Path $rdpPolicyPath).UserAuthentication
+        }
 
-        if (($securityLayer -eq 2) -and ($listenerSecurityLayer -eq 2) -and ($policySecurityLayer -eq 2)) {
-            Write-Host "`n`t`tThe RDP Security Layer is set to SSL."
+        if (($userAuthentication -eq 1) -and (($null -eq $policyUserAuthentication) -or ($policyUserAuthentication -eq 1))) {
+            Write-Host "`n`t`tNetwork Level Authentication is required for RDP connections."
         } else {
-            Write-Host "`n`t`tThe RDP Security Layer is not set to SSL. Setting it to SSL..."
+            Write-Host "`n`t`tNetwork Level Authentication is not required for RDP connections. Enabling..."
 
-            # Make sure the policy key exists
-            if (-not (Test-Path $rdpPolicyPath)) {
-                New-Item -Path $rdpPolicyPath -Force | Out-Null
+            # Require Network Level Authentication
+            Set-ItemProperty -Path $rdpListenerPath -Name "UserAuthentication" -Value 1 -Type DWord
+
+            # If a Group Policy setting is turning it off, turn it on there too
+            if ($null -ne $policyUserAuthentication -and $policyUserAuthentication -ne 1) {
+                Set-ItemProperty -Path $rdpPolicyPath -Name "UserAuthentication" -Value 1 -Type DWord
             }
-
-            # Set the Security Layer to SSL in the registry so it takes effect now
-            Set-ItemProperty -Path $rdpPolicyPath -Name "SecurityLayer" -Value 2 -Type DWord
-            if (Test-Path $rdpListenerPath) {
-                Set-ItemProperty -Path $rdpListenerPath -Name "SecurityLayer" -Value 2 -Type DWord
-            }
-
-            # Enable it in the local Group Policy so gpedit.msc shows it as Enabled
-            Set-LocalGpoDword -key $rdpPolicyKey -valueName "SecurityLayer" -data 2
 
             # Force systemwide updates
             gpupdate /force | Out-Null
 
             # Verify
-            $newSecurityLayer = (Get-ItemProperty -Path $rdpPolicyPath).SecurityLayer
-            $newPolicySecurityLayer = Get-LocalGpoDword -key $rdpPolicyKey -valueName "SecurityLayer"
-            if (($newSecurityLayer -eq 2) -and ($newPolicySecurityLayer -eq 2)) {
-                Write-Host "`n`n`t`t[!] Set the RDP Security Layer to SSL. Reopen the Local Group Policy Editor to see it."
+            $newUserAuthentication = (Get-ItemProperty -Path $rdpListenerPath).UserAuthentication
+            if ($newUserAuthentication -eq 1) {
+                Write-Host "`n`n`t`t[!] Network Level Authentication is now required for RDP connections."
             } else {
-                Write-Host "`n`n`t`t[!] Could not set the RDP Security Layer. Check the Local Group Policy Editor manually."
+                Write-Host "`n`n`t`t[!] Could not enable Network Level Authentication. Check the Remote Desktop settings manually."
             }
         }
     } else {
