@@ -1,6 +1,9 @@
 # cyberpatriot-automation-scripts
 A bunch of scripts to automate routine tasks like policy checks/changes for (mainly) CyberPatriot and similar competitions
 
+# How to use
+Run this: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
+
 ## Currently automated tasks
 ### Policies
  - A sufficient password history is being kept
@@ -32,6 +35,6 @@ If you're a member of this project, feel free to work on this!
     - Same issue as above
  - Unauthorized users may not create global objects
     - I'll come back to this, I don't want to deal with those account and group IDs and stuff right now
-## Bugs
+### Bugs
 - Unauthorized users/admins does not exclude default System Administrator
 - When max pwd age is -1, it is not changed
