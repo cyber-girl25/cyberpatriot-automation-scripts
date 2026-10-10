@@ -488,3 +488,42 @@ if ($checkDefenderExeExclusion -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Audit Credential Validation [Success]"
+$checkAuditCredentialValidation = Prompt-Policy -policyName $currentPolicy
+
+if ($checkAuditCredentialValidation -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # GUID for the Credential Validation subcategory (works on any system language)
+    $subcategoryGuid = "{0CCE923F-69AE-11D9-BED3-505054503030}"
+
+    # Get the current audit setting (CSV output, last column is the Inclusion Setting)
+    $auditInfo = auditpol /get /subcategory:$subcategoryGuid /r | ConvertFrom-Csv
+    $setting = $auditInfo."Inclusion Setting"
+
+    # If Success auditing is already on, tell the user. Otherwise enable it, keeping the Failure setting as is.
+    if ($setting -like "*Success*") {
+        Write-Host "`n`t`tCredential Validation is audited for: $setting"
+    } else {
+        Write-Host "`n`t`tCredential Validation is audited for: $setting. Enabling Success auditing..."
+
+        # Enable Success auditing
+        auditpol /set /subcategory:$subcategoryGuid /success:enable | Out-Null
+
+        # Force systemwide updates
+        gpupdate /force | Out-Null
+
+        # Verify the change
+        $newSetting = (auditpol /get /subcategory:$subcategoryGuid /r | ConvertFrom-Csv)."Inclusion Setting"
+        if ($newSetting -like "*Success*") {
+            Write-Host "`n`n`t`t[!] Credential Validation now audits Success."
+        } else {
+            Write-Host "`n`n`t`t[!] Could not enable Success auditing. Check Local Security Policy manually."
+        }
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
