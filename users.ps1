@@ -249,8 +249,8 @@ $checkNoPasswordUsers = Prompt-Policy -policyName $currentPolicy
 if ($checkNoPasswordUsers -eq 0) {
     Write-Host "`n`t[!] Checking '$currentPolicy'"
 
-    # Get enabled users that are not "Password protected": a password is not required, or one was never set
-    $noPasswordUsers = @(Get-LocalUser | Where-Object { $_.Enabled -and ((-not $_.PasswordRequired) -or ($null -eq $_.PasswordLastSet)) })
+    # Get enabled users that are not "Password protected": a password is not required, one was never set, or the password is blank
+    $noPasswordUsers = @(Get-LocalUser | Where-Object { $_.Enabled -and ((-not $_.PasswordRequired) -or ($null -eq $_.PasswordLastSet) -or (Test-BlankPassword -userName $_.Name)) })
 
     if ($noPasswordUsers.Count -eq 0) {
         Write-Host "`n`t`tAll enabled users have passwords."
