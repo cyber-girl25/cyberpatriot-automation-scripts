@@ -804,3 +804,42 @@ if ($checkRemoteAssistance -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "AutoPlay has been disabled [all users]"
+$checkAutoPlay = Prompt-Policy -policyName $currentPolicy
+
+if ($checkAutoPlay -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Registry location of the "Turn off Autoplay" Group Policy setting
+    $autoPlayPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+
+    # Get the value. 255 (0xFF) means Autoplay is turned off on all drives.
+    $noDriveTypeAutoRun = $null
+    if (Test-Path $autoPlayPath) {
+        $noDriveTypeAutoRun = (Get-ItemProperty -Path $autoPlayPath).NoDriveTypeAutoRun
+    }
+
+    if ($noDriveTypeAutoRun -eq 255) {
+        Write-Host "`n`t`tAutoplay is turned off on all drives."
+    } else {
+        Write-Host "`n`t`tAutoplay is not turned off on all drives. Correcting this..."
+
+        # Make sure the Explorer policy key exists
+        if (-not (Test-Path $autoPlayPath)) {
+            New-Item -Path $autoPlayPath -Force | Out-Null
+        }
+
+        # Enable "Turn off Autoplay" for all drives
+        Set-ItemProperty -Path $autoPlayPath -Name "NoDriveTypeAutoRun" -Value 255 -Type DWord
+
+        # Force systemwide updates
+        gpupdate /force | Out-Null
+
+        Write-Host "`n`n`t`t[!] Turned off Autoplay on all drives."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
