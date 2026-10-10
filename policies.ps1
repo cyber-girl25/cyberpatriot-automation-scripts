@@ -500,26 +500,87 @@ if ($checkAuditCredentialValidation -eq 0) {
     # GUID for the Credential Validation subcategory (works on any system language)
     $subcategoryGuid = "{0CCE923F-69AE-11D9-BED3-505054503030}"
 
-    # Get the current audit setting (CSV output, last column is the Inclusion Setting)
-    $auditInfo = auditpol /get /subcategory:$subcategoryGuid /r | ConvertFrom-Csv
-    $setting = $auditInfo."Inclusion Setting"
+    # The Local Security Policy window shows the policy stored in the local GPO's audit.csv,
+    # not the live auditpol setting, so both have to be checked and set.
+    $auditCsvFolder = "$env:windir\System32\GroupPolicy\Machine\Microsoft\Windows NT\Audit"
+    $auditCsvPath = "$auditCsvFolder\audit.csv"
+    $gptIniPath = "$env:windir\System32\GroupPolicy\gpt.ini"
+    $auditCsvHeader = "Machine Name,Policy Target,Subcategory,Subcategory GUID,Inclusion Setting,Exclusion Setting,Setting Value"
 
-    # If Success auditing is already on, tell the user. Otherwise enable it, keeping the Failure setting as is.
-    if ($setting -like "*Success*") {
-        Write-Host "`n`t`tCredential Validation is audited for: $setting"
+    # Get the live audit setting (CSV output, last column is the Inclusion Setting)
+    $liveSetting = (auditpol /get /subcategory:$subcategoryGuid /r | ConvertFrom-Csv)."Inclusion Setting"
+    $liveHasSuccess = $liveSetting -like "*Success*"
+
+    # Get the policy (audit.csv) setting. Setting Value: 1 = Success, 2 = Failure, 3 = both.
+    $policyValue = 0
+    $policyHasSuccess = $false
+    if (Test-Path $auditCsvPath) {
+        $policyRow = Import-Csv $auditCsvPath | Where-Object { $_."Subcategory GUID" -eq $subcategoryGuid }
+        if ($policyRow) {
+            $policyValue = [int]$policyRow."Setting Value"
+            $policyHasSuccess = (($policyValue -band 1) -eq 1)
+        }
+    }
+
+    # If both are set, tell the user. Otherwise set both, keeping the Failure setting as is.
+    if ($liveHasSuccess -and $policyHasSuccess) {
+        Write-Host "`n`t`tCredential Validation audits Success."
     } else {
-        Write-Host "`n`t`tCredential Validation is audited for: $setting. Enabling Success auditing..."
+        Write-Host "`n`t`tCredential Validation does not audit Success in the policy. Enabling..."
 
-        # Enable Success auditing
+        # Keep Failure auditing if it was already on
+        $failureBit = $policyValue -band 2
+        if ($liveSetting -like "*Failure*") { $failureBit = 2 }
+        $newValue = 1 -bor $failureBit
+        if ($newValue -eq 3) { $inclusion = "Success and Failure" } else { $inclusion = "Success" }
+
+        # Write the policy into audit.csv, keeping any other subcategories already in it
+        if (-not (Test-Path $auditCsvFolder)) {
+            New-Item -Path $auditCsvFolder -ItemType Directory -Force | Out-Null
+        }
+        $csvLines = @()
+        if (Test-Path $auditCsvPath) {
+            $csvLines = @(Get-Content $auditCsvPath | Where-Object { $_ -and ($_ -notlike "Machine Name*") -and ($_ -notlike "*$subcategoryGuid*") })
+        }
+        $csvLines += ",System,Audit Credential Validation,$subcategoryGuid,$inclusion,,$newValue"
+        Set-Content -Path $auditCsvPath -Value (@($auditCsvHeader) + $csvLines) -Encoding ASCII
+
+        # Register the audit extension in gpt.ini so Group Policy applies audit.csv, and bump the version
+        $auditExtension = "[{F3CCC681-B74C-4060-9F26-CD84525DCA2A}{0F3F3735-573D-9804-99E4-AB2A69BA5FD4}]"
+        if (Test-Path $gptIniPath) {
+            $gptLines = @(Get-Content $gptIniPath)
+        } else {
+            $gptLines = @("[General]")
+        }
+        $extFound = $false
+        $versionFound = $false
+        for ($i = 0; $i -lt $gptLines.Count; $i++) {
+            if ($gptLines[$i] -like "gPCMachineExtensionNames=*") {
+                $extFound = $true
+                if ($gptLines[$i] -notlike "*F3CCC681-B74C-4060-9F26-CD84525DCA2A*") {
+                    $gptLines[$i] = $gptLines[$i] + $auditExtension
+                }
+            }
+            if ($gptLines[$i] -like "Version=*") {
+                $versionFound = $true
+                $gptLines[$i] = "Version=" + ([int]($gptLines[$i] -split "=")[1] + 1)
+            }
+        }
+        if (-not $extFound) { $gptLines += "gPCMachineExtensionNames=$auditExtension" }
+        if (-not $versionFound) { $gptLines += "Version=1" }
+        Set-Content -Path $gptIniPath -Value $gptLines -Encoding ASCII
+
+        # Apply the live setting now
         auditpol /set /subcategory:$subcategoryGuid /success:enable | Out-Null
 
         # Force systemwide updates
         gpupdate /force | Out-Null
 
-        # Verify the change
-        $newSetting = (auditpol /get /subcategory:$subcategoryGuid /r | ConvertFrom-Csv)."Inclusion Setting"
-        if ($newSetting -like "*Success*") {
-            Write-Host "`n`n`t`t[!] Credential Validation now audits Success."
+        # Verify both the live setting and the policy file
+        $newLive = (auditpol /get /subcategory:$subcategoryGuid /r | ConvertFrom-Csv)."Inclusion Setting"
+        $newPolicyRow = Import-Csv $auditCsvPath | Where-Object { $_."Subcategory GUID" -eq $subcategoryGuid }
+        if (($newLive -like "*Success*") -and $newPolicyRow -and (([int]$newPolicyRow."Setting Value" -band 1) -eq 1)) {
+            Write-Host "`n`n`t`t[!] Credential Validation now audits Success. Reopen Local Security Policy to see it."
         } else {
             Write-Host "`n`n`t`t[!] Could not enable Success auditing. Check Local Security Policy manually."
         }
