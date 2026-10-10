@@ -1268,3 +1268,85 @@ if ($checkRdpNla -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Windows automatically checks for updates"
+$checkAutoUpdates = Prompt-Policy -policyName $currentPolicy
+
+if ($checkAutoUpdates -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Registry location of the "Configure Automatic Updates" Group Policy setting
+    $auPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU"
+    $auPolicyKey = "Software\Policies\Microsoft\Windows\WindowsUpdate\AU"
+
+    # Get the live registry values. NoAutoUpdate 0 = Enabled, 1 = Disabled.
+    # AUOptions 2 = notify to download, 3 = auto download and notify to install, 4 = auto download and schedule the install, 5 = allow local admin to choose.
+    $noAutoUpdate = $null
+    $auOptions = $null
+    $scheduledInstallDay = $null
+    $scheduledInstallTime = $null
+    if (Test-Path $auPath) {
+        $auProps = Get-ItemProperty -Path $auPath
+        $noAutoUpdate = $auProps.NoAutoUpdate
+        $auOptions = $auProps.AUOptions
+        $scheduledInstallDay = $auProps.ScheduledInstallDay
+        $scheduledInstallTime = $auProps.ScheduledInstallTime
+    }
+
+    # Get the values in the local Group Policy file. This is what gpedit.msc shows.
+    $policyNoAutoUpdate = Get-LocalGpoDword -key $auPolicyKey -valueName "NoAutoUpdate"
+    $policyAuOptions = Get-LocalGpoDword -key $auPolicyKey -valueName "AUOptions"
+
+    if (($noAutoUpdate -eq 0) -and ($auOptions -in 2..5) -and ($policyNoAutoUpdate -eq 0) -and ($policyAuOptions -in 2..5)) {
+        Write-Host "`n`t`tWindows automatically checks for updates."
+    } else {
+        Write-Host "`n`t`tAutomatic updates are not enabled. Enabling..."
+
+        # Keep an existing valid update option, otherwise use 4 (auto download and schedule the install)
+        $newAuOptions = 4
+        if ($auOptions -in 2..5) {
+            $newAuOptions = $auOptions
+        } elseif ($policyAuOptions -in 2..5) {
+            $newAuOptions = $policyAuOptions
+        }
+
+        # Keep an existing install schedule, otherwise use every day at 3 AM
+        $newInstallDay = 0
+        if ($null -ne $scheduledInstallDay) { $newInstallDay = $scheduledInstallDay }
+        $newInstallTime = 3
+        if ($null -ne $scheduledInstallTime) { $newInstallTime = $scheduledInstallTime }
+
+        # Make sure the policy key exists
+        if (-not (Test-Path $auPath)) {
+            New-Item -Path $auPath -Force | Out-Null
+        }
+
+        # Enable "Configure Automatic Updates" in the registry so it takes effect now
+        Set-ItemProperty -Path $auPath -Name "NoAutoUpdate" -Value 0 -Type DWord
+        Set-ItemProperty -Path $auPath -Name "AUOptions" -Value $newAuOptions -Type DWord
+        Set-ItemProperty -Path $auPath -Name "ScheduledInstallDay" -Value $newInstallDay -Type DWord
+        Set-ItemProperty -Path $auPath -Name "ScheduledInstallTime" -Value $newInstallTime -Type DWord
+
+        # Enable it in the local Group Policy so gpedit.msc shows it as Enabled
+        Set-LocalGpoDword -key $auPolicyKey -valueName "NoAutoUpdate" -data 0
+        Set-LocalGpoDword -key $auPolicyKey -valueName "AUOptions" -data $newAuOptions
+        Set-LocalGpoDword -key $auPolicyKey -valueName "ScheduledInstallDay" -data $newInstallDay
+        Set-LocalGpoDword -key $auPolicyKey -valueName "ScheduledInstallTime" -data $newInstallTime
+
+        # Force systemwide updates
+        gpupdate /force | Out-Null
+
+        # Verify
+        $newAuProps = Get-ItemProperty -Path $auPath
+        $newPolicyNoAutoUpdate = Get-LocalGpoDword -key $auPolicyKey -valueName "NoAutoUpdate"
+        if (($newAuProps.NoAutoUpdate -eq 0) -and ($newPolicyNoAutoUpdate -eq 0)) {
+            Write-Host "`n`n`t`t[!] Enabled automatic updates. Reopen the Local Group Policy Editor to see it."
+        } else {
+            Write-Host "`n`n`t`t[!] Could not enable automatic updates. Check the Local Group Policy Editor manually."
+        }
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
