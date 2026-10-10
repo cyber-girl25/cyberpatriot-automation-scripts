@@ -431,3 +431,31 @@ if ($checkAccessThisComputerFromTheNetwork -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Windows Defender does not exclude .exe file extensions"
+$checkDefenderExeExclusion = Prompt-Policy -policyName$currentPolicy
+
+if ($checkDefenderExeExclusion -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get current Windows Defender preferences
+    $defenderPrefs = Get-MpPreference
+    $excludedExtensions =$defenderPrefs.ExtensionExclusions
+
+    # Check if 'exe' or '.exe' is in the excluded extensions list
+    if ($null -ne$excludedExtensions -and ("exe" -in $excludedExtensions -or ".exe" -in $excludedExtensions)) {
+        Write-Host "`n`t`t.exe is currently excluded from Windows Defender scans. Removing..."
+
+        # Remove the exclusions (checking for both variations)
+        Remove-MpPreference -ExtensionExclusion "exe" -ErrorAction SilentlyContinue
+        Remove-MpPreference -ExtensionExclusion ".exe" -ErrorAction SilentlyContinue
+
+        Write-Host "`n`n`t`t[!] Removed .exe from Windows Defender extension exclusions."
+    } else {
+        Write-Host "`n`t`tWindows Defender is not excluding .exe files."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
