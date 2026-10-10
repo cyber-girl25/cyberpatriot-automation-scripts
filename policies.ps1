@@ -42,6 +42,27 @@ function Prompt-Item {
     return $result
 }
 
+function Prompt-Question {
+    param(
+        $title,
+        $message
+    )
+    # Defining title and message
+    $title = "[*] " + $title
+
+    # Defining options
+    $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Yes"
+    $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "No"
+    $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+
+    # Presenting the choice to the user, yes is default
+    # Note to self: 0 means yes, 1 means no
+    $result = $host.ui.PromptForChoice($title, $message, $options, 0)
+
+    # Returning the result
+    return $result
+}
+
 function Prompt-Share {
     param(
         $shareName,
@@ -1123,6 +1144,74 @@ if ($checkSmartScreen -eq 0) {
         } else {
             Write-Host "`n`n`t`t[!] Could not configure Windows SmartScreen. Check the Local Group Policy Editor manually."
         }
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
+
+#########################################################################################
+
+$currentPolicy = "RDP Security Layer set to SSL"
+$checkRdpSecurityLayer = Prompt-Policy -policyName $currentPolicy
+
+if ($checkRdpSecurityLayer -eq 0) {
+    # Only run this policy if RDP is a critical service
+    $rdpIsCritical = Prompt-Question -title "Remote Desktop (RDP)" -message "Is RDP a critical service on this computer?"
+
+    if ($rdpIsCritical -eq 0) {
+        Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+        # Registry locations: the Group Policy setting, and the live RDP listener setting
+        $rdpPolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+        $rdpPolicyKey = "Software\Policies\Microsoft\Windows NT\Terminal Services"
+        $rdpListenerPath = "HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp"
+
+        # Get the Security Layer values. 0 = RDP, 1 = Negotiate, 2 = SSL.
+        $securityLayer = $null
+        if (Test-Path $rdpPolicyPath) {
+            $securityLayer = (Get-ItemProperty -Path $rdpPolicyPath).SecurityLayer
+        }
+        $listenerSecurityLayer = $null
+        if (Test-Path $rdpListenerPath) {
+            $listenerSecurityLayer = (Get-ItemProperty -Path $rdpListenerPath).SecurityLayer
+        }
+
+        # Get the value in the local Group Policy file. This is what gpedit.msc shows.
+        $policySecurityLayer = Get-LocalGpoDword -key $rdpPolicyKey -valueName "SecurityLayer"
+
+        if (($securityLayer -eq 2) -and ($listenerSecurityLayer -eq 2) -and ($policySecurityLayer -eq 2)) {
+            Write-Host "`n`t`tThe RDP Security Layer is set to SSL."
+        } else {
+            Write-Host "`n`t`tThe RDP Security Layer is not set to SSL. Setting it to SSL..."
+
+            # Make sure the policy key exists
+            if (-not (Test-Path $rdpPolicyPath)) {
+                New-Item -Path $rdpPolicyPath -Force | Out-Null
+            }
+
+            # Set the Security Layer to SSL in the registry so it takes effect now
+            Set-ItemProperty -Path $rdpPolicyPath -Name "SecurityLayer" -Value 2 -Type DWord
+            if (Test-Path $rdpListenerPath) {
+                Set-ItemProperty -Path $rdpListenerPath -Name "SecurityLayer" -Value 2 -Type DWord
+            }
+
+            # Enable it in the local Group Policy so gpedit.msc shows it as Enabled
+            Set-LocalGpoDword -key $rdpPolicyKey -valueName "SecurityLayer" -data 2
+
+            # Force systemwide updates
+            gpupdate /force | Out-Null
+
+            # Verify
+            $newSecurityLayer = (Get-ItemProperty -Path $rdpPolicyPath).SecurityLayer
+            $newPolicySecurityLayer = Get-LocalGpoDword -key $rdpPolicyKey -valueName "SecurityLayer"
+            if (($newSecurityLayer -eq 2) -and ($newPolicySecurityLayer -eq 2)) {
+                Write-Host "`n`n`t`t[!] Set the RDP Security Layer to SSL. Reopen the Local Group Policy Editor to see it."
+            } else {
+                Write-Host "`n`n`t`t[!] Could not set the RDP Security Layer. Check the Local Group Policy Editor manually."
+            }
+        }
+    } else {
+        Write-Host "`n`t[!] Skipping '$currentPolicy' because RDP is not a critical service"
     }
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
