@@ -92,6 +92,145 @@ function Prompt-Share {
     return $result
 }
 
+function Find-PolEntry {
+    param(
+        $bytes,
+        $key,
+        $valueName
+    )
+    # Registry.pol entries look like: [key\0;value\0;type;size;data] with everything encoded as UTF-16.
+    # Build the start of the entry we are looking for.
+    $unicode = [System.Text.Encoding]::Unicode
+    $semicolon = [byte[]](0x3B, 0x00)
+    $prefix = [System.Collections.Generic.List[byte]]::new()
+    $prefix.AddRange([byte[]](0x5B, 0x00))
+    $prefix.AddRange($unicode.GetBytes($key))
+    $prefix.AddRange([byte[]](0x00, 0x00))
+    $prefix.AddRange($semicolon)
+    $prefix.AddRange($unicode.GetBytes($valueName))
+    $prefix.AddRange([byte[]](0x00, 0x00))
+    $prefix.AddRange($semicolon)
+
+    # Search after the 8 byte header
+    for ($i = 8; $i -le ($bytes.Length - $prefix.Count); $i++) {
+        $match = $true
+        for ($j = 0; $j -lt $prefix.Count; $j++) {
+            if ($bytes[$i + $j] -ne $prefix[$j]) {
+                $match = $false
+                break
+            }
+        }
+        if ($match) {
+            $typeOffset = $i + $prefix.Count
+            $size = [BitConverter]::ToUInt32($bytes, $typeOffset + 6)
+            $dataOffset = $typeOffset + 12
+            return @{
+                Index      = $i
+                Length     = $prefix.Count + 12 + $size + 2
+                DataOffset = $dataOffset
+                Size       = $size
+            }
+        }
+    }
+    return $null
+}
+
+function Get-LocalGpoDword {
+    param(
+        $key,
+        $valueName
+    )
+    # Read a DWORD from the local Group Policy file (what gpedit.msc shows). Returns $null if it is not configured.
+    $polPath = "$env:windir\System32\GroupPolicy\Machine\Registry.pol"
+    if (-not (Test-Path $polPath)) {
+        return $null
+    }
+    $bytes = [System.IO.File]::ReadAllBytes($polPath)
+    if ($bytes.Length -lt 8) {
+        return $null
+    }
+    $entry = Find-PolEntry -bytes $bytes -key $key -valueName $valueName
+    if ($null -eq $entry -or $entry.Size -ne 4) {
+        return $null
+    }
+    return [BitConverter]::ToUInt32($bytes, $entry.DataOffset)
+}
+
+function Set-LocalGpoDword {
+    param(
+        $key,
+        $valueName,
+        $data
+    )
+    # Write a DWORD into the local Group Policy file so gpedit.msc shows the setting as configured
+    $polFolder = "$env:windir\System32\GroupPolicy\Machine"
+    $polPath = "$polFolder\Registry.pol"
+    $gptIniPath = "$env:windir\System32\GroupPolicy\gpt.ini"
+    $unicode = [System.Text.Encoding]::Unicode
+    $semicolon = [byte[]](0x3B, 0x00)
+
+    if (-not (Test-Path $polFolder)) {
+        New-Item -Path $polFolder -ItemType Directory -Force | Out-Null
+    }
+
+    # Start from the existing file, or a new one with the "PReg" header and version 1
+    $bytes = [byte[]](0x50, 0x52, 0x65, 0x67, 0x01, 0x00, 0x00, 0x00)
+    if (Test-Path $polPath) {
+        $existingBytes = [System.IO.File]::ReadAllBytes($polPath)
+        if ($existingBytes.Length -ge 8) {
+            $bytes = $existingBytes
+        }
+    }
+    $list = [System.Collections.Generic.List[byte]]::new($bytes)
+
+    # Remove the old entry for this value, if there is one
+    $existing = Find-PolEntry -bytes $bytes -key $key -valueName $valueName
+    if ($null -ne $existing) {
+        $list.RemoveRange($existing.Index, $existing.Length)
+    }
+
+    # Add the new entry: [key\0;value\0;type(4 = DWORD);size(4);data]
+    $list.AddRange([byte[]](0x5B, 0x00))
+    $list.AddRange($unicode.GetBytes($key))
+    $list.AddRange([byte[]](0x00, 0x00))
+    $list.AddRange($semicolon)
+    $list.AddRange($unicode.GetBytes($valueName))
+    $list.AddRange([byte[]](0x00, 0x00))
+    $list.AddRange($semicolon)
+    $list.AddRange([BitConverter]::GetBytes([uint32]4))
+    $list.AddRange($semicolon)
+    $list.AddRange([BitConverter]::GetBytes([uint32]4))
+    $list.AddRange($semicolon)
+    $list.AddRange([BitConverter]::GetBytes([uint32]$data))
+    $list.AddRange([byte[]](0x5D, 0x00))
+    [System.IO.File]::WriteAllBytes($polPath, $list.ToArray())
+
+    # Register the Registry policy extension in gpt.ini so Group Policy applies Registry.pol, and bump the version
+    $registryExtension = "[{35378EAC-683F-11D2-A89A-00C04FBBCFA2}{D02B1F72-3407-48AE-BA88-E8213C6761F1}]"
+    if (Test-Path $gptIniPath) {
+        $gptLines = @(Get-Content $gptIniPath)
+    } else {
+        $gptLines = @("[General]")
+    }
+    $extFound = $false
+    $versionFound = $false
+    for ($i = 0; $i -lt $gptLines.Count; $i++) {
+        if ($gptLines[$i] -like "gPCMachineExtensionNames=*") {
+            $extFound = $true
+            if ($gptLines[$i] -notlike "*35378EAC-683F-11D2-A89A-00C04FBBCFA2*") {
+                $gptLines[$i] = $gptLines[$i].Replace("gPCMachineExtensionNames=", "gPCMachineExtensionNames=$registryExtension")
+            }
+        }
+        if ($gptLines[$i] -like "Version=*") {
+            $versionFound = $true
+            $gptLines[$i] = "Version=" + ([int]($gptLines[$i] -split "=")[1] + 1)
+        }
+    }
+    if (-not $extFound) { $gptLines += "gPCMachineExtensionNames=$registryExtension" }
+    if (-not $versionFound) { $gptLines += "Version=1" }
+    Set-Content -Path $gptIniPath -Value $gptLines -Encoding ASCII
+}
+
 #########################################################################################
 
 $currentPolicy = "A sufficient password history is being kept"
@@ -815,14 +954,18 @@ if ($checkAutoPlay -eq 0) {
 
     # Registry location of the "Turn off Autoplay" Group Policy setting
     $autoPlayPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer"
+    $autoPlayPolicyKey = "Software\Microsoft\Windows\CurrentVersion\Policies\Explorer"
 
-    # Get the value. 255 (0xFF) means Autoplay is turned off on all drives.
+    # Get the live registry value. 255 (0xFF) means Autoplay is turned off on all drives.
     $noDriveTypeAutoRun = $null
     if (Test-Path $autoPlayPath) {
         $noDriveTypeAutoRun = (Get-ItemProperty -Path $autoPlayPath).NoDriveTypeAutoRun
     }
 
-    if ($noDriveTypeAutoRun -eq 255) {
+    # Get the value in the local Group Policy file. This is what gpedit.msc shows.
+    $policyNoDriveTypeAutoRun = Get-LocalGpoDword -key $autoPlayPolicyKey -valueName "NoDriveTypeAutoRun"
+
+    if (($noDriveTypeAutoRun -eq 255) -and ($policyNoDriveTypeAutoRun -eq 255)) {
         Write-Host "`n`t`tAutoplay is turned off on all drives."
     } else {
         Write-Host "`n`t`tAutoplay is not turned off on all drives. Correcting this..."
@@ -832,13 +975,23 @@ if ($checkAutoPlay -eq 0) {
             New-Item -Path $autoPlayPath -Force | Out-Null
         }
 
-        # Enable "Turn off Autoplay" for all drives
+        # Enable "Turn off Autoplay" for all drives in the registry so it takes effect now
         Set-ItemProperty -Path $autoPlayPath -Name "NoDriveTypeAutoRun" -Value 255 -Type DWord
+
+        # Enable it in the local Group Policy so gpedit.msc shows it as Enabled
+        Set-LocalGpoDword -key $autoPlayPolicyKey -valueName "NoDriveTypeAutoRun" -data 255
 
         # Force systemwide updates
         gpupdate /force | Out-Null
 
-        Write-Host "`n`n`t`t[!] Turned off Autoplay on all drives."
+        # Verify both
+        $newRegistryValue = (Get-ItemProperty -Path $autoPlayPath).NoDriveTypeAutoRun
+        $newPolicyValue = Get-LocalGpoDword -key $autoPlayPolicyKey -valueName "NoDriveTypeAutoRun"
+        if (($newRegistryValue -eq 255) -and ($newPolicyValue -eq 255)) {
+            Write-Host "`n`n`t`t[!] Turned off Autoplay on all drives. Reopen the Local Group Policy Editor to see it."
+        } else {
+            Write-Host "`n`n`t`t[!] Could not turn off Autoplay. Check the Local Group Policy Editor manually."
+        }
     }
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
