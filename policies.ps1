@@ -706,3 +706,55 @@ if ($checkFileShares -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Firewall protection has been enabled"
+$checkFirewall = Prompt-Policy -policyName $currentPolicy
+
+if ($checkFirewall -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Registry folders used by Group Policy for each firewall profile (Private is called Standard here)
+    $policyProfileFolders = @{
+        "Domain"  = "DomainProfile"
+        "Private" = "StandardProfile"
+        "Public"  = "PublicProfile"
+    }
+
+    # Get the profiles that have the firewall turned off
+    $disabledProfiles = @(Get-NetFirewallProfile | Where-Object { $_.Enabled.ToString() -ne "True" })
+
+    if ($disabledProfiles.Count -gt 0) {
+        foreach ($firewallProfile in $disabledProfiles) {
+            Write-Host "`n`t`tThe firewall is off for the $($firewallProfile.Name) profile. Enabling..."
+
+            # Turn on the firewall for the profile
+            Set-NetFirewallProfile -Name $firewallProfile.Name -Enabled True
+
+            # If a Group Policy setting is turning the firewall off for this profile, turn it on there too
+            $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\WindowsFirewall\$($policyProfileFolders[$firewallProfile.Name])"
+            if (Test-Path $policyPath) {
+                $enableFirewall = (Get-ItemProperty -Path $policyPath).EnableFirewall
+                if ($null -ne $enableFirewall -and $enableFirewall -ne 1) {
+                    Set-ItemProperty -Path $policyPath -Name "EnableFirewall" -Value 1
+                }
+            }
+
+            Write-Host "`n`n`t`t[!] Enabled the firewall for the $($firewallProfile.Name) profile."
+        }
+
+        # Force systemwide updates
+        gpupdate /force | Out-Null
+
+        # Verify all profiles are on
+        $stillDisabled = @(Get-NetFirewallProfile | Where-Object { $_.Enabled.ToString() -ne "True" })
+        if ($stillDisabled.Count -gt 0) {
+            Write-Host "`n`n`t`t[!] Could not enable the firewall for: $(($stillDisabled.Name) -join ', '). Check Windows Defender Firewall manually."
+        }
+    } else {
+        Write-Host "`n`t`tThe firewall is enabled for the Domain, Private, and Public profiles."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
