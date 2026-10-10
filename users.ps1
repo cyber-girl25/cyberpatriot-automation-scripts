@@ -41,6 +41,43 @@ function Prompt-User {
     return $result
 }
 
+function Test-BlankPassword {
+    param(
+        $userName
+    )
+    # Load the Windows logon API once
+    if (-not ("Win32.LogonApi" -as [type])) {
+        Add-Type -Namespace Win32 -Name LogonApi -MemberDefinition @'
+[DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+public static extern bool LogonUser(string lpszUsername, string lpszDomain, string lpszPassword, int dwLogonType, int dwLogonProvider, out IntPtr phToken);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool CloseHandle(IntPtr hObject);
+'@
+    }
+
+    # Try to log on with an empty password. Type 3 is network, type 2 is interactive.
+    # Success means the password is blank. Error 1327 means the password is blank but blank passwords
+    # are limited to the console. Error 1385 means that logon type is not allowed for the user, so try the next type.
+    # Any other error means the user has a real password.
+    foreach ($logonType in @(3, 2)) {
+        $token = [IntPtr]::Zero
+        $success = [Win32.LogonApi]::LogonUser($userName, ".", "", $logonType, 0, [ref]$token)
+        $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+
+        if ($success) {
+            [void][Win32.LogonApi]::CloseHandle($token)
+            return $true
+        }
+        if ($errorCode -eq 1327) {
+            return $true
+        }
+        if ($errorCode -ne 1385) {
+            return $false
+        }
+    }
+    return $false
+}
+
 #########################################################################################
 
 $currentPolicy = "Remove unauthorized users"
@@ -237,6 +274,58 @@ Password
 
     Write-Host "`n`t[!] Changed insecure password for all given users"
 
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
+
+#########################################################################################
+
+$currentPolicy = "Give any users without passwords a password"
+$checkNoPasswordUsers = Prompt-Policy -policyName $currentPolicy
+
+if ($checkNoPasswordUsers -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get enabled users that are not "Password protected": a password is not required, one was never set, or the password is blank
+    $noPasswordUsers = @(Get-LocalUser | Where-Object { $_.Enabled -and ((-not $_.PasswordRequired) -or ($null -eq $_.PasswordLastSet) -or (Test-BlankPassword -userName $_.Name)) })
+
+    if ($noPasswordUsers.Count -eq 0) {
+        Write-Host "`n`t`tAll enabled users have passwords."
+    } else {
+        # Get the secure password
+        $prompt = @"
+
+Enter the secure password. If none is provided, the default 'CyberPatriot123!' will be used.
+Password
+"@
+        $passwordText = Read-Host $prompt
+
+        # If none is provided, set password to secure default
+        if ($null -eq $passwordText -or $passwordText -eq "") {
+            $passwordText = "CyberPatriot123!"
+        }
+        $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
+
+        # Loop through each user without a password. Ask the user if they should be given one. If yes, give it.
+        foreach ($noPasswordUser in $noPasswordUsers) {
+            $userName = $noPasswordUser.Name
+            $givePassword = Prompt-User -userName $userName -action "User '$userName' does not have a password. Would you like to give them one?"
+            if ($givePassword -eq 0) {
+                # Set password
+                Set-LocalUser -Name $userName -Password $password
+
+                # Force password reset on next login
+                net user $userName /logonpasswordchg:yes | Out-Null
+
+                # Show as password protected
+                net user $userName /passwordreq:yes | Out-Null
+
+                Write-Host "`n`t`t[!] Gave user '$userName' a password"
+            } else {
+                Write-Host "`n`t`tIgnoring user '$userName'..."
+            }
+        }
+    }
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
