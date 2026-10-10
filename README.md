@@ -1,7 +1,8 @@
 # cyberpatriot-automation-scripts
 A bunch of scripts to automate routine tasks like policy checks/changes for (mainly) CyberPatriot and similar competitions
 
-# test
+# How to use
+Run this: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
 
 ## Currently automated tasks
 ### Policies
