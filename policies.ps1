@@ -758,3 +758,49 @@ if ($checkFirewall -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Remote Assistance connections have been disabled"
+$checkRemoteAssistance = Prompt-Policy -policyName $currentPolicy
+
+if ($checkRemoteAssistance -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Registry locations: the System Properties checkbox, and the Group Policy setting that can override it
+    $remoteAssistancePath = "HKLM:\SYSTEM\CurrentControlSet\Control\Remote Assistance"
+    $remoteAssistancePolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+
+    # Get the "Allow Remote Assistance connections to this computer" value (1 = allowed, 0 = not allowed)
+    $allowRemoteAssistance = (Get-ItemProperty -Path $remoteAssistancePath).fAllowToGetHelp
+
+    # Get the Group Policy value, if one is configured
+    $policyAllowsRemoteAssistance = $null
+    if (Test-Path $remoteAssistancePolicyPath) {
+        $policyAllowsRemoteAssistance = (Get-ItemProperty -Path $remoteAssistancePolicyPath).fAllowToGetHelp
+    }
+
+    if (($allowRemoteAssistance -ne 0) -or ($null -ne $policyAllowsRemoteAssistance -and $policyAllowsRemoteAssistance -ne 0)) {
+        Write-Host "`n`t`tRemote Assistance connections are allowed. Disabling..."
+
+        # Uncheck "Allow Remote Assistance connections to this computer"
+        Set-ItemProperty -Path $remoteAssistancePath -Name "fAllowToGetHelp" -Value 0
+
+        # Also turn off full control, which only applies when Remote Assistance is allowed
+        Set-ItemProperty -Path $remoteAssistancePath -Name "fAllowFullControl" -Value 0 -ErrorAction SilentlyContinue
+
+        # If a Group Policy setting is allowing Remote Assistance, turn it off there too
+        if ($null -ne $policyAllowsRemoteAssistance -and $policyAllowsRemoteAssistance -ne 0) {
+            Set-ItemProperty -Path $remoteAssistancePolicyPath -Name "fAllowToGetHelp" -Value 0
+        }
+
+        # Force systemwide updates
+        gpupdate /force | Out-Null
+
+        Write-Host "`n`n`t`t[!] Disabled Remote Assistance connections."
+    } else {
+        Write-Host "`n`t`tRemote Assistance connections are disabled."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
