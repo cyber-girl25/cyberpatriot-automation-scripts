@@ -202,7 +202,7 @@ if ($checkSecureMaxPWAgeExists -eq 0) {
     # Get value
     $value = [int]($policyLine -split "=")[1].Trim()
 
-    if ($value -le 90) {
+    if (($value -le 90) -and ($value -ge 1)) {
         Write-Host "`n`t`tThe maximum password age is $value"
     } else {
         Write-Host "`n`t`tThe maximum password age is $value. Changing this to 90..."
