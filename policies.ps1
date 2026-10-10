@@ -20,54 +20,26 @@ function Prompt-Policy {
     return $result
 }
 
-function Get-SeceditPolicy {
+function Prompt-Item {
     param(
-        $area,
-        $policyName
+        $itemName,
+        $action
     )
-    # Creating the temporary file for security stuff
-    $tempFile = "$env:TEMP\secpolicy.inf"
-    secedit /export /cfg $tempFile /areas $area | Out-Null
+    # Defining title and message
+    $title = "[*] " + $itemName
+    $message = $action
 
-    # Find the policy line
-    $policyLine = Get-Content $tempFile | Select-String -Pattern $policyName -SimpleMatch
+    # Defining options
+    $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Yes, do it for ""$itemName"""
+    $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "No, leave ""$itemName"" alone"
+    $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
 
-    # Get rid of the temp file
-    Remove-Item $tempFile
+    # Presenting the choice to the user, yes is default
+    # Note to self: 0 means yes, 1 means no
+    $result = $host.ui.PromptForChoice($title, $message, $options, 0)
 
-    # Return the policy
-    return $policyLine
-}
-
-function Write-SeceditPolicy {
-    param(
-        $area,
-        $policyHeader,
-        $policyLine
-    )
-    # Create the configuration string
-        $config = @"
-[Unicode]
-Unicode=yes
-[$policyHeader]
-$policyLine
-[Version]
-signature="`$CHICAGO`$"
-Revision=1        
-"@
-
-        # Save the text into a temp file
-        $importFile = "$env:TEMP\secupdate.inf"
-        $config | Out-File -Filepath $importFile -Encoding ascii
-
-        # import this into the Windows Security Database
-        secedit /configure /db $env:windir\security\local.sdb /cfg $importFile /areas $area | Out-Null
-
-        # Remove the temp file as it is not needed anymore
-        Remove-Item $importFile
-
-        # Force systemwide updates
-        gpupdate /force | Out-Null
+    # Returning the result
+    return $result
 }
 
 function Prompt-Share {
@@ -156,13 +128,14 @@ function Get-LocalGpoDword {
     return [BitConverter]::ToUInt32($bytes, $entry.DataOffset)
 }
 
-function Set-LocalGpoDword {
+function Set-LocalGpoValue {
     param(
         $key,
         $valueName,
+        $type,
         $data
     )
-    # Write a DWORD into the local Group Policy file so gpedit.msc shows the setting as configured
+    # Write a DWORD or a string into the local Group Policy file so gpedit.msc shows the setting as configured
     $polFolder = "$env:windir\System32\GroupPolicy\Machine"
     $polPath = "$polFolder\Registry.pol"
     $gptIniPath = "$env:windir\System32\GroupPolicy\gpt.ini"
@@ -189,7 +162,16 @@ function Set-LocalGpoDword {
         $list.RemoveRange($existing.Index, $existing.Length)
     }
 
-    # Add the new entry: [key\0;value\0;type(4 = DWORD);size(4);data]
+    # Work out the data bytes and type code (1 = string, 4 = DWORD)
+    if ($type -eq "String") {
+        $typeCode = 1
+        $dataBytes = [byte[]]($unicode.GetBytes($data) + [byte[]](0x00, 0x00))
+    } else {
+        $typeCode = 4
+        $dataBytes = [BitConverter]::GetBytes([uint32]$data)
+    }
+
+    # Add the new entry: [key\0;value\0;type(4);size(4);data]
     $list.AddRange([byte[]](0x5B, 0x00))
     $list.AddRange($unicode.GetBytes($key))
     $list.AddRange([byte[]](0x00, 0x00))
@@ -197,11 +179,11 @@ function Set-LocalGpoDword {
     $list.AddRange($unicode.GetBytes($valueName))
     $list.AddRange([byte[]](0x00, 0x00))
     $list.AddRange($semicolon)
-    $list.AddRange([BitConverter]::GetBytes([uint32]4))
+    $list.AddRange([BitConverter]::GetBytes([uint32]$typeCode))
     $list.AddRange($semicolon)
-    $list.AddRange([BitConverter]::GetBytes([uint32]4))
+    $list.AddRange([BitConverter]::GetBytes([uint32]$dataBytes.Length))
     $list.AddRange($semicolon)
-    $list.AddRange([BitConverter]::GetBytes([uint32]$data))
+    $list.AddRange($dataBytes)
     $list.AddRange([byte[]](0x5D, 0x00))
     [System.IO.File]::WriteAllBytes($polPath, $list.ToArray())
 
@@ -229,6 +211,95 @@ function Set-LocalGpoDword {
     if (-not $extFound) { $gptLines += "gPCMachineExtensionNames=$registryExtension" }
     if (-not $versionFound) { $gptLines += "Version=1" }
     Set-Content -Path $gptIniPath -Value $gptLines -Encoding ASCII
+}
+
+function Set-LocalGpoDword {
+    param(
+        $key,
+        $valueName,
+        $data
+    )
+    Set-LocalGpoValue -key $key -valueName $valueName -type "DWORD" -data $data
+}
+
+function Set-LocalGpoString {
+    param(
+        $key,
+        $valueName,
+        $data
+    )
+    Set-LocalGpoValue -key $key -valueName $valueName -type "String" -data $data
+}
+
+function Get-LocalGpoString {
+    param(
+        $key,
+        $valueName
+    )
+    # Read a string from the local Group Policy file (what gpedit.msc shows). Returns $null if it is not configured.
+    $polPath = "$env:windir\System32\GroupPolicy\Machine\Registry.pol"
+    if (-not (Test-Path $polPath)) {
+        return $null
+    }
+    $bytes = [System.IO.File]::ReadAllBytes($polPath)
+    if ($bytes.Length -lt 8) {
+        return $null
+    }
+    $entry = Find-PolEntry -bytes $bytes -key $key -valueName $valueName
+    if ($null -eq $entry -or $entry.Size -lt 2) {
+        return $null
+    }
+    return [System.Text.Encoding]::Unicode.GetString($bytes, $entry.DataOffset, $entry.Size).TrimEnd([char]0)
+}
+
+function Get-SeceditPolicy {
+    param(
+        $area,
+        $policyName
+    )
+    # Creating the temporary file for security stuff
+    $tempFile = "$env:TEMP\secpolicy.inf"
+    secedit /export /cfg $tempFile /areas $area | Out-Null
+
+    # Find the policy line
+    $policyLine = Get-Content $tempFile | Select-String -Pattern $policyName -SimpleMatch
+
+    # Get rid of the temp file
+    Remove-Item $tempFile
+
+    # Return the policy
+    return $policyLine
+}
+
+function Write-SeceditPolicy {
+    param(
+        $area,
+        $policyHeader,
+        $policyLine
+    )
+    # Create the configuration string
+        $config = @"
+[Unicode]
+Unicode=yes
+[$policyHeader]
+$policyLine
+[Version]
+signature="`$CHICAGO`$"
+Revision=1        
+"@
+
+        # Save the text into a temp file
+        $importFile = "$env:TEMP\secupdate.inf"
+        $config | Out-File -Filepath $importFile -Encoding ascii
+
+        # import this into the Windows Security Database
+        secedit /configure /db $env:windir\security\local.sdb /cfg $importFile /areas $area | Out-Null
+
+        # Remove the temp file as it is not needed anymore
+        Remove-Item $importFile
+
+        # Force systemwide updates
+        gpupdate /force | Out-Null
 }
 
 #########################################################################################
@@ -991,6 +1062,66 @@ if ($checkAutoPlay -eq 0) {
             Write-Host "`n`n`t`t[!] Turned off Autoplay on all drives. Reopen the Local Group Policy Editor to see it."
         } else {
             Write-Host "`n`n`t`t[!] Could not turn off Autoplay. Check the Local Group Policy Editor manually."
+        }
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
+
+#########################################################################################
+
+$currentPolicy = "Windows SmartScreen configured to warn or block"
+$checkSmartScreen = Prompt-Policy -policyName $currentPolicy
+
+if ($checkSmartScreen -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Registry location of the "Configure Windows Defender SmartScreen" Group Policy setting
+    $smartScreenPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\System"
+    $smartScreenPolicyKey = "Software\Policies\Microsoft\Windows\System"
+
+    # Get the live registry values. EnableSmartScreen 1 = Enabled, ShellSmartScreenLevel is "Warn" or "Block".
+    $enableSmartScreen = $null
+    $smartScreenLevel = $null
+    if (Test-Path $smartScreenPath) {
+        $smartScreenProps = Get-ItemProperty -Path $smartScreenPath
+        $enableSmartScreen = $smartScreenProps.EnableSmartScreen
+        $smartScreenLevel = $smartScreenProps.ShellSmartScreenLevel
+    }
+
+    # Get the values in the local Group Policy file. This is what gpedit.msc shows.
+    $policyEnableSmartScreen = Get-LocalGpoDword -key $smartScreenPolicyKey -valueName "EnableSmartScreen"
+    $policySmartScreenLevel = Get-LocalGpoString -key $smartScreenPolicyKey -valueName "ShellSmartScreenLevel"
+
+    if (($enableSmartScreen -eq 1) -and ($smartScreenLevel -eq "Warn") -and ($policyEnableSmartScreen -eq 1) -and ($policySmartScreenLevel -eq "Warn")) {
+        Write-Host "`n`t`tWindows SmartScreen is enabled and configured to warn."
+    } else {
+        Write-Host "`n`t`tWindows SmartScreen is not enabled and configured to warn. Correcting this..."
+
+        # Make sure the policy key exists
+        if (-not (Test-Path $smartScreenPath)) {
+            New-Item -Path $smartScreenPath -Force | Out-Null
+        }
+
+        # Enable SmartScreen and set it to Warn in the registry so it takes effect now
+        Set-ItemProperty -Path $smartScreenPath -Name "EnableSmartScreen" -Value 1 -Type DWord
+        Set-ItemProperty -Path $smartScreenPath -Name "ShellSmartScreenLevel" -Value "Warn" -Type String
+
+        # Enable it in the local Group Policy so gpedit.msc shows it as Enabled
+        Set-LocalGpoDword -key $smartScreenPolicyKey -valueName "EnableSmartScreen" -data 1
+        Set-LocalGpoString -key $smartScreenPolicyKey -valueName "ShellSmartScreenLevel" -data "Warn"
+
+        # Force systemwide updates
+        gpupdate /force | Out-Null
+
+        # Verify both
+        $newProps = Get-ItemProperty -Path $smartScreenPath
+        $newPolicyEnable = Get-LocalGpoDword -key $smartScreenPolicyKey -valueName "EnableSmartScreen"
+        $newPolicyLevel = Get-LocalGpoString -key $smartScreenPolicyKey -valueName "ShellSmartScreenLevel"
+        if (($newProps.EnableSmartScreen -eq 1) -and ($newProps.ShellSmartScreenLevel -eq "Warn") -and ($newPolicyEnable -eq 1) -and ($newPolicyLevel -eq "Warn")) {
+            Write-Host "`n`n`t`t[!] Enabled Windows SmartScreen and set it to warn. Reopen the Local Group Policy Editor to see it."
+        } else {
+            Write-Host "`n`n`t`t[!] Could not configure Windows SmartScreen. Check the Local Group Policy Editor manually."
         }
     }
 } else {
