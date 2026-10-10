@@ -240,3 +240,55 @@ Password
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Give any users without passwords a password"
+$checkNoPasswordUsers = Prompt-Policy -policyName $currentPolicy
+
+if ($checkNoPasswordUsers -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get enabled users that are not "Password protected": a password is not required, or one was never set
+    $noPasswordUsers = @(Get-LocalUser | Where-Object { $_.Enabled -and ((-not $_.PasswordRequired) -or ($null -eq $_.PasswordLastSet)) })
+
+    if ($noPasswordUsers.Count -eq 0) {
+        Write-Host "`n`t`tAll enabled users have passwords."
+    } else {
+        # Get the secure password
+        $prompt = @"
+
+Enter the secure password. If none is provided, the default 'CyberPatriot123!' will be used.
+Password
+"@
+        $passwordText = Read-Host $prompt
+
+        # If none is provided, set password to secure default
+        if ($null -eq $passwordText -or $passwordText -eq "") {
+            $passwordText = "CyberPatriot123!"
+        }
+        $password = ConvertTo-SecureString $passwordText -AsPlainText -Force
+
+        # Loop through each user without a password. Ask the user if they should be given one. If yes, give it.
+        foreach ($noPasswordUser in $noPasswordUsers) {
+            $userName = $noPasswordUser.Name
+            $givePassword = Prompt-User -userName $userName -action "User '$userName' does not have a password. Would you like to give them one?"
+            if ($givePassword -eq 0) {
+                # Set password
+                Set-LocalUser -Name $userName -Password $password
+
+                # Force password reset on next login
+                net user $userName /logonpasswordchg:yes | Out-Null
+
+                # Show as password protected
+                net user $userName /passwordreq:yes | Out-Null
+
+                Write-Host "`n`t`t[!] Gave user '$userName' a password"
+            } else {
+                Write-Host "`n`t`tIgnoring user '$userName'..."
+            }
+        }
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
