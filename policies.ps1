@@ -431,3 +431,60 @@ if ($checkAccessThisComputerFromTheNetwork -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Windows Defender does not exclude .exe file extensions"
+$checkDefenderExeExclusion = Prompt-Policy -policyName $currentPolicy
+
+if ($checkDefenderExeExclusion -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Registry locations behind the Group Policy "Extension Exclusions" setting
+    $exclusionsPolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions"
+    $extensionsPolicyPath = "$exclusionsPolicyPath\Extensions"
+
+    # Check whether the Group Policy "Extension Exclusions" setting is configured with an exe entry
+    $policyHasExe = $false
+    if (Test-Path $extensionsPolicyPath) {
+        $policyEntries = (Get-Item -Path $extensionsPolicyPath).Property
+        if (("exe" -in $policyEntries) -or (".exe" -in $policyEntries)) {
+            $policyHasExe = $true
+        }
+    }
+
+    # Check whether Windows Security (Defender preferences) has an exe exclusion
+    $excludedExtensions = (Get-MpPreference).ExclusionExtension
+    $prefsHasExe = ($null -ne $excludedExtensions) -and (("exe" -in $excludedExtensions) -or (".exe" -in $excludedExtensions))
+
+    if ($policyHasExe -or $prefsHasExe) {
+        Write-Host "`n`t`t.exe is currently excluded from Windows Defender scans. Removing..."
+
+        # Group Policy Editor steps: set Extension Exclusions to Not Configured
+        if (Test-Path $extensionsPolicyPath) {
+            Remove-Item -Path $extensionsPolicyPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path $exclusionsPolicyPath) {
+            Remove-ItemProperty -Path $exclusionsPolicyPath -Name "Exclusions_Extensions" -ErrorAction SilentlyContinue
+        }
+
+        # Force systemwide updates so the policy change takes effect
+        gpupdate /force | Out-Null
+
+        # Windows Security steps: remove both ".exe" and "exe" from the exclusions list
+        Remove-MpPreference -ExclusionExtension ".exe" -ErrorAction SilentlyContinue
+        Remove-MpPreference -ExclusionExtension "exe" -ErrorAction SilentlyContinue
+
+        # Verify the exclusions are really gone
+        $remaining = (Get-MpPreference).ExclusionExtension
+        if (($null -ne $remaining) -and (("exe" -in $remaining) -or (".exe" -in $remaining))) {
+            Write-Host "`n`n`t`t[!] Could not remove .exe from the exclusions. Check Windows Security manually."
+        } else {
+            Write-Host "`n`n`t`t[!] Removed .exe from Windows Defender extension exclusions."
+        }
+    } else {
+        Write-Host "`n`t`tWindows Defender is not excluding .exe files."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
