@@ -70,6 +70,28 @@ Revision=1
         gpupdate /force | Out-Null
 }
 
+function Prompt-Share {
+    param(
+        $shareName,
+        $action
+    )
+    # Defining title and message
+    $title = "[*] " + $shareName
+    $message = $action
+
+    # Defining options
+    $yes = New-Object System.Management.Automation.Host.ChoiceDescription "&Yes", "Stop sharing ""$shareName"""
+    $no = New-Object System.Management.Automation.Host.ChoiceDescription "&No", "Keep sharing ""$shareName"""
+    $options = [System.Management.Automation.Host.ChoiceDescription[]]($yes, $no)
+
+    # Presenting the choice to the user, yes is default
+    # Note to self: 0 means yes, 1 means no
+    $result = $host.ui.PromptForChoice($title, $message, $options, 0)
+
+    # Returning the result
+    return $result
+}
+
 #########################################################################################
 
 $currentPolicy = "A sufficient password history is being kept"
@@ -635,6 +657,51 @@ if ($checkCreateGlobalObjects -eq 0) {
         Write-Host "`n`n`t`t[!] Removed unauthorized users from policy."
     } else {
         Write-Host "`n`t`tOnly authorized users can create global objects."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
+
+#########################################################################################
+
+$currentPolicy = "Unauthorized file shares are disabled (including hidden shares)"
+$checkFileShares = Prompt-Policy -policyName $currentPolicy
+
+if ($checkFileShares -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Default administrative shares that Windows creates automatically. These are never removed.
+    $defaultShares = @('C$', 'ADMIN$', 'IPC$')
+
+    # Get all shares, including hidden ones (names ending in $), except the default shares
+    $unauthorizedShares = @(Get-SmbShare | Where-Object { $_.Name -notin $defaultShares })
+
+    if ($unauthorizedShares.Count -gt 0) {
+        # Loop through each unauthorized share. Ask the user if it should be removed. If yes, stop sharing it.
+        foreach ($share in $unauthorizedShares) {
+            # Safety check: never remove a default share
+            if ($defaultShares -contains $share.Name) {
+                continue
+            }
+
+            if ($share.Name.EndsWith("$")) {
+                $shareType = "Hidden share"
+            } else {
+                $shareType = "Share"
+            }
+
+            $removeShare = Prompt-Share -shareName $share.Name -action "$shareType '$($share.Name)' ($($share.Path)) is not a default share. Would you like to stop sharing it?"
+            if ($removeShare -eq 0) {
+                # Stop sharing
+                Remove-SmbShare -Name $share.Name -Force
+
+                Write-Host "`n`t`t[!] Stopped sharing '$($share.Name)'."
+            } else {
+                Write-Host "`n`t`tIgnoring share '$($share.Name)'..."
+            }
+        }
+    } else {
+        Write-Host "`n`t`tNo unauthorized file shares, including hidden shares, are shared."
     }
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
