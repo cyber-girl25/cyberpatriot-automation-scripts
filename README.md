@@ -1,10 +1,6 @@
 # cyberpatriot-automation-scripts
 A bunch of scripts to automate routine tasks like policy checks/changes for (mainly) CyberPatriot and similar competitions
 
-## How to use
-Run the following command in the powershell session terminal:
-`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
-
 ## Currently automated tasks
 ### Policies
  - A sufficient password history is being kept
