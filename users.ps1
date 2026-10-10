@@ -41,6 +41,43 @@ function Prompt-User {
     return $result
 }
 
+function Test-BlankPassword {
+    param(
+        $userName
+    )
+    # Load the Windows logon API once
+    if (-not ("Win32.LogonApi" -as [type])) {
+        Add-Type -Namespace Win32 -Name LogonApi -MemberDefinition @'
+[DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+public static extern bool LogonUser(string lpszUsername, string lpszDomain, string lpszPassword, int dwLogonType, int dwLogonProvider, out IntPtr phToken);
+[DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool CloseHandle(IntPtr hObject);
+'@
+    }
+
+    # Try to log on with an empty password. Type 3 is network, type 2 is interactive.
+    # Success means the password is blank. Error 1327 means the password is blank but blank passwords
+    # are limited to the console. Error 1385 means that logon type is not allowed for the user, so try the next type.
+    # Any other error means the user has a real password.
+    foreach ($logonType in @(3, 2)) {
+        $token = [IntPtr]::Zero
+        $success = [Win32.LogonApi]::LogonUser($userName, ".", "", $logonType, 0, [ref]$token)
+        $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+
+        if ($success) {
+            [void][Win32.LogonApi]::CloseHandle($token)
+            return $true
+        }
+        if ($errorCode -eq 1327) {
+            return $true
+        }
+        if ($errorCode -ne 1385) {
+            return $false
+        }
+    }
+    return $false
+}
+
 #########################################################################################
 
 $currentPolicy = "Remove unauthorized users"
