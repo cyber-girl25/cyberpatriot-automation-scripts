@@ -588,3 +588,54 @@ if ($checkAuditCredentialValidation -eq 0) {
 } else {
     Write-Host "`n`t[!] Skipping '$currentPolicy'"
 }
+
+#########################################################################################
+
+$currentPolicy = "Unauthorized users may not create global objects"
+$checkCreateGlobalObjects = Prompt-Policy -policyName $currentPolicy
+
+if ($checkCreateGlobalObjects -eq 0) {
+    Write-Host "`n`t[!] Checking '$currentPolicy'"
+
+    # Get the policy line
+    $policyLine = Get-SeceditPolicy -area "USER_RIGHTS" -policyName "SeCreateGlobalPrivilege"
+
+    # Get the values
+    $values = (($policyLine -split "=")[1].Trim() -split ",") | ForEach-Object { $_.Trim() }
+
+    # Default authorized holders: Administrators, SERVICE, LOCAL SERVICE, NETWORK SERVICE
+    $authorized = @("*S-1-5-32-544", "*S-1-5-6", "*S-1-5-19", "*S-1-5-20")
+
+    # Anyone else is unauthorized
+    $unauthorized = @($values | Where-Object { $_ -and ($_ -notin $authorized) })
+
+    if ($unauthorized.Count -gt 0) {
+        Write-Host "`n`t`tUnauthorized users can create global objects. Removing..."
+
+        # Show who is being removed (translating SIDs to names where possible)
+        foreach ($entry in $unauthorized) {
+            $displayName = $entry
+            if ($entry.StartsWith("*")) {
+                try {
+                    $displayName = ([System.Security.Principal.SecurityIdentifier]$entry.TrimStart("*")).Translate([System.Security.Principal.NTAccount]).Value
+                } catch {
+                    $displayName = $entry
+                }
+            }
+            Write-Host "`t`t`tRemoving: $displayName"
+        }
+
+        # Determine the new value
+        $newValues = ($values | Where-Object { $_ -in $authorized }) -join ","
+        $newPolicy = "SeCreateGlobalPrivilege = $newValues"
+
+        # Write the policy
+        Write-SeceditPolicy -area "USER_RIGHTS" -policyHeader "Privilege Rights" -policyLine $newPolicy
+
+        Write-Host "`n`n`t`t[!] Removed unauthorized users from policy."
+    } else {
+        Write-Host "`n`t`tOnly authorized users can create global objects."
+    }
+} else {
+    Write-Host "`n`t[!] Skipping '$currentPolicy'"
+}
